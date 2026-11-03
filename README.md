@@ -12,6 +12,7 @@ split bills, and track spending with friends.
 - ml/       : Machine Learning
 
 ## Tech Stack
-- Frontend: To be determined
-- Backend: To be determined
+- Frontend: React Native
+- Backend: Express.js
+- Database: PostgreSQL
 - ML: Python
