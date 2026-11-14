@@ -1,0 +1,14 @@
+services:
+  ml:
+    build: .
+    container_name: chipin-ml
+    ports:
+      - "8000:8000"
+    environment:
+      - ML_API_KEY=${ML_API_KEY:-}
+      - ML_ALLOW_MOCK=${ML_ALLOW_MOCK:-1}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
