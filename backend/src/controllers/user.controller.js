@@ -5,7 +5,7 @@ import { AppError } from '../utils/AppError.js';
 export const getMe = async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('profiles')
-    .select('id, full_name')
+    .select('id, username, full_name')
     .eq('id', req.user.id)
     .maybeSingle();
 
@@ -28,6 +28,7 @@ export const getMe = async (req, res) => {
   res.status(200).json({
     data: {
       id: data.id,
+      username: data.username,
       full_name: data.full_name,
       email: req.user.email,
     },
