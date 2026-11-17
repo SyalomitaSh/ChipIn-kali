@@ -4,17 +4,39 @@
 -- PROFILES (BL-01, BL-03): 1 baris per user di auth.users
 create table if not exists public.profiles (
   id          uuid primary key references auth.users(id) on delete cascade,
+  username    text not null,
   full_name   text not null,
   created_at  timestamptz not null default now()
 );
+
+create unique index if not exists profiles_username_lower_uidx
+  on public.profiles (lower(username));
 
 -- Otomatis buat profil saat user registrasi (nama diambil dari metadata signUp)
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  insert into public.profiles (id, full_name)
-  values (new.id, coalesce(
-  nullif(trim(new.raw_user_meta_data->>'full_name'), ''), split_part(new.email, '@', 1)));
+  insert into public.profiles (id, username, full_name)
+  values (
+    new.id,
+    lower(coalesce(
+      nullif(trim(new.raw_user_meta_data->>'username'), ''),
+      left(
+        coalesce(
+          nullif(trim(both '_' from regexp_replace(
+            lower(split_part(coalesce(new.email, ''), '@', 1)),
+            '[^a-z0-9_]', '_', 'g'
+          )), ''),
+          'user'
+        ),
+        20
+      ) || '_' || left(replace(new.id::text, '-', ''), 8)
+    )),
+    coalesce(
+      nullif(trim(new.raw_user_meta_data->>'full_name'), ''),
+      split_part(new.email, '@', 1)
+    )
+  );
   return new;
 end; $$;
 

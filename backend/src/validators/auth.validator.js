@@ -6,7 +6,17 @@ const emailSchema = z
   .email('Format email tidak valid')
   .transform((value) => value.toLowerCase());
 
+const usernameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3, 'Username minimal 3 karakter')
+  .max(30, 'Username maksimal 30 karakter')
+  .regex(/^[a-z0-9_]+$/, 'Username hanya boleh berisi huruf kecil, angka, dan underscore');
+
 export const registerSchema = z.object({
+  username: usernameSchema,
+
   full_name: z
     .string()
     .trim()

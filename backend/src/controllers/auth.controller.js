@@ -1,4 +1,3 @@
-
 import {
   createAnonClient,
   supabaseAdmin,
@@ -22,6 +21,7 @@ const formatSession = (session) => {
 
 const formatUser = (user) => ({
   id: user.id,
+  username: user.user_metadata?.username ?? null,
   full_name: user.user_metadata?.full_name ?? null,
   email: user.email,
 });
@@ -45,7 +45,34 @@ const isDuplicateEmailError = (error) =>
 // ==========================================
 
 export const register = async (req, res) => {
-  const { full_name, email, password } = req.body;
+  const { username, full_name, email, password } = req.body;
+
+  // Pemeriksaan awal agar username yang sudah dipakai mendapat
+  // respons 409 sebelum Supabase Auth membuat akun.
+  const { data: existingUsername, error: usernameCheckError } =
+    await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .ilike('username', username)
+      .limit(1)
+      .maybeSingle();
+
+  if (usernameCheckError) {
+    console.error('Username check error:', usernameCheckError);
+    throw new AppError(
+      500,
+      'INTERNAL_ERROR',
+      'Gagal memeriksa ketersediaan username'
+    );
+  }
+
+  if (existingUsername) {
+    throw new AppError(
+      409,
+      'USERNAME_TAKEN',
+      'Username sudah digunakan'
+    );
+  }
 
   const supabase = createAnonClient();
 
@@ -54,44 +81,44 @@ export const register = async (req, res) => {
     password,
     options: {
       data: {
+        username,
         full_name,
       },
     },
   });
 
   if (error) {
-    console.log(error);
-    // if (isRateLimitError(error)) {
-    //   throw new AppError(
-    //     429,
-    //     'RATE_LIMITED',
-    //     'Terlalu banyak request, coba lagi nanti'
-    //   );
-    // }
+    if (isRateLimitError(error)) {
+      throw new AppError(
+        429,
+        'RATE_LIMITED',
+        'Terlalu banyak request, coba lagi nanti'
+      );
+    }
 
-    // if (error.code === 'email_address_invalid') {
-    //   throw new AppError(
-    //     400,
-    //     'INVALID_EMAIL',
-    //     'Format email tidak valid'
-    //   );
-    // }
+    if (error.code === 'email_address_invalid') {
+      throw new AppError(
+        400,
+        'INVALID_EMAIL',
+        'Format email tidak valid'
+      );
+    }
 
-    // if (isDuplicateEmailError(error)) {
-    //   throw new AppError(
-    //     409,
-    //     'EMAIL_TAKEN',
-    //     'Email sudah terdaftar'
-    //   );
-    // }
+    if (isDuplicateEmailError(error)) {
+      throw new AppError(
+        409,
+        'EMAIL_TAKEN',
+        'Email sudah terdaftar'
+      );
+    }
 
-    // console.error('Register error:', error);
+    console.error('Register error:', error);
 
-    // throw new AppError(
-    //   500,
-    //   'INTERNAL_ERROR',
-    //   'Terjadi kesalahan saat registrasi'
-    // );
+    throw new AppError(
+      500,
+      'INTERNAL_ERROR',
+      'Terjadi kesalahan saat registrasi'
+    );
   }
 
   // Supabase dapat mengembalikan identities kosong
