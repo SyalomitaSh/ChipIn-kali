@@ -32,12 +32,11 @@ const formatUser = (user) => ({
 
 const isRateLimitError = (error) =>
   error?.status === 429 ||
-  error?.code === 'over_request_rate_limit';
+  ['over_request_rate_limit', 'over_email_send_rate_limit'].includes(error?.code);
 
 const isDuplicateEmailError = (error) =>
-  /already registered|already exists/i.test(
-    error?.message ?? ''
-  );
+  ['user_already_exists', 'email_exists'].includes(error?.code) ||
+  /already registered|already exists/i.test(error?.message ?? '');
 
 // ==========================================
 // BL-01 REGISTER
@@ -53,7 +52,7 @@ export const register = async (req, res) => {
     await supabaseAdmin
       .from('profiles')
       .select('id')
-      .ilike('username', username)
+      .eq('username', username)
       .limit(1)
       .maybeSingle();
 
@@ -140,9 +139,13 @@ export const register = async (req, res) => {
   }
 
   res.status(201).json({
+    success: true,
     data: {
       user: formatUser(data.user),
+      // session dapat bernilai null jika konfirmasi email diaktifkan
+      // pada pengaturan Supabase Auth.
       session: formatSession(data.session),
+      requires_email_confirmation: data.session === null,
     },
   });
 };
@@ -168,12 +171,10 @@ export const login = async (req, res) => {
       throw new AppError(
         429,
         'RATE_LIMITED',
-        'Terlalu banyak percobaan login'
+        'Terlalu banyak percobaan login, coba lagi nanti'
       );
     }
 
-    // Kredensial salah atau akun tidak dapat
-    // melakukan autentikasi password.
     if (error.code === 'invalid_credentials') {
       throw new AppError(
         401,
@@ -195,11 +196,20 @@ export const login = async (req, res) => {
     throw new AppError(
       500,
       'INTERNAL_ERROR',
-      'Terjadi kesalahan pada server'
+      'Terjadi kesalahan saat login'
+    );
+  }
+
+  if (!data.user || !data.session) {
+    throw new AppError(
+      500,
+      'LOGIN_FAILED',
+      'Gagal membuat sesi login'
     );
   }
 
   res.status(200).json({
+    success: true,
     data: {
       user: formatUser(data.user),
       session: formatSession(data.session),
@@ -208,7 +218,7 @@ export const login = async (req, res) => {
 };
 
 // ==========================================
-// REFRESH SESSION
+// BL-02 REFRESH SESSION
 // POST /api/auth/refresh
 // ==========================================
 
@@ -217,16 +227,17 @@ export const refresh = async (req, res) => {
 
   const supabase = createAnonClient();
 
-  const { data, error } = await supabase.auth.refreshSession({
-    refresh_token,
-  });
+  const { data, error } =
+    await supabase.auth.refreshSession({
+      refresh_token,
+    });
 
   if (error || !data.session) {
     if (error && isRateLimitError(error)) {
       throw new AppError(
         429,
         'RATE_LIMITED',
-        'Terlalu banyak request'
+        'Terlalu banyak request, coba lagi nanti'
       );
     }
 
@@ -236,18 +247,19 @@ export const refresh = async (req, res) => {
       throw new AppError(
         500,
         'INTERNAL_ERROR',
-        'Gagal memperbarui session'
+        'Gagal memperbarui sesi'
       );
     }
 
     throw new AppError(
       401,
       'INVALID_REFRESH_TOKEN',
-      'Sesi berakhir, silakan login kembali'
+      'Refresh token tidak valid atau sudah kedaluwarsa'
     );
   }
 
   res.status(200).json({
+    success: true,
     data: {
       session: formatSession(data.session),
     },
@@ -272,11 +284,12 @@ export const logout = async (req, res) => {
     throw new AppError(
       500,
       'LOGOUT_FAILED',
-      'Gagal mengakhiri session'
+      'Gagal mengakhiri sesi'
     );
   }
 
   res.status(200).json({
+    success: true,
     data: {
       message: 'Logout berhasil',
     },
