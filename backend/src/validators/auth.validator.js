@@ -44,11 +44,3 @@ export const refreshSchema = z.object({
     .trim()
     .min(1, 'Refresh token wajib diisi'),
 });
-
-export const updateProfileSchema = z.object({
-  full_name: z
-    .string()
-    .trim()
-    .min(2)
-    .max(50),
-});

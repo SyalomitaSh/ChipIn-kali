@@ -5,9 +5,6 @@ import morgan from 'morgan';
 import { env } from './config/env.js';
 import routes from './routes/index.js';
 import { notFound, errorHandler } from './middlewares/errorHandler.js';
-import swaggerUi from 'swagger-ui-express';
-import swaggerSpec from './config/swagger.js';
-
 const app = express();
 
 const origins = env.CORS_ORIGIN === '*' ? '*' : env.CORS_ORIGIN.split(',').map((o) => o.trim());
@@ -31,9 +28,6 @@ app.get("/", (req, res) => {
 });
 
 app.use('/api', routes);
-
-// API Documentation
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.use(notFound);
 app.use(errorHandler);

@@ -256,7 +256,9 @@ alter table public.budget_alerts enable row level security;
 alter table public.expense_analyses enable row level security;
 
 -- Grant required privileges for backend service role
-grant select on table public.profiles to service_role;
+GRANT SELECT, UPDATE
+ON TABLE public.profiles
+TO service_role;
 
 -- Profiles: self and active fellow group members can read; only self can update.
 create policy profiles_read on public.profiles for select to authenticated using (
