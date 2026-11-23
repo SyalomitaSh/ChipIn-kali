@@ -79,3 +79,81 @@ export const createGroup = async (req, res) => {
     },
   });
 };
+
+// GET /api/groups/:groupId/members
+// Hanya anggota aktif grup yang boleh melihat daftar anggota aktif grup tersebut.
+export const getGroupMembers = async (req, res) => {
+  const groupId = req.params.groupId;
+
+  const { data: memberships, error: membershipError } = await supabaseAdmin
+    .from('group_members')
+    .select('id, user_id, role, status, joined_at')
+    .eq('group_id', groupId)
+    .eq('status', 'active')
+    .order('joined_at', { ascending: true });
+
+  if (membershipError) {
+    console.error('Get group members error:', membershipError);
+    throw new AppError(
+      500,
+      'GROUP_MEMBERS_FETCH_FAILED',
+      'Gagal mengambil daftar anggota grup'
+    );
+  }
+
+  const totalMembers = memberships?.length ?? 0;
+
+  const userIds = (memberships ?? []).map((member) => member.user_id);
+
+  if (userIds.length === 0) {
+    return res.status(200).json({
+      success: true,
+      data: {
+        total_members: 0,
+        members: [],
+      },
+    });
+  }
+
+  const { data: profiles, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('id, username, full_name, avatar_url')
+    .in('id', userIds);
+
+  if (profileError) {
+    console.error('Get group member profiles error:', profileError);
+    throw new AppError(
+      500,
+      'GROUP_MEMBERS_FETCH_FAILED',
+      'Gagal mengambil profil anggota grup'
+    );
+  }
+
+  const profileById = new Map(
+    (profiles ?? []).map((profile) => [profile.id, profile])
+  );
+
+  const members = (memberships ?? []).map((membership) => {
+    const profile = profileById.get(membership.user_id);
+
+    return {
+      id: membership.id,
+      user_id: membership.user_id,
+      username: profile?.username ?? null,
+      full_name: profile?.full_name ?? null,
+      avatar_url: profile?.avatar_url ?? null,
+      role: membership.role,
+      is_admin: ['owner', 'admin'].includes(membership.role),
+      status: membership.status,
+      joined_at: membership.joined_at,
+    };
+  });
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      total_members: totalMembers,
+      members,
+    },
+  });
+};
