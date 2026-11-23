@@ -43,6 +43,26 @@ create table public.groups (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- BL-06: selectable group background catalog.
+-- Image files live in Supabase Storage/CDN; this table stores their metadata and URL.
+create table public.group_backgrounds (
+  id uuid primary key default gen_random_uuid(),
+  key varchar(50) not null unique,
+  name varchar(100) not null,
+  image_url text not null,
+  sort_order integer not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+alter table public.groups
+  add column start_date date not null default current_date,
+  add column end_date date,
+  add column background_id uuid
+    references public.group_backgrounds(id) on delete set null,
+  add constraint groups_date_range_check
+    check (end_date is null or end_date >= start_date);
+
 create table public.group_members (
   id uuid primary key default gen_random_uuid(),
   group_id uuid not null references public.groups(id) on delete cascade,
@@ -240,6 +260,7 @@ $$;
 -- Enable RLS on all application tables
 alter table public.profiles enable row level security;
 alter table public.groups enable row level security;
+alter table public.group_backgrounds enable row level security;
 alter table public.group_members enable row level security;
 alter table public.group_invitations enable row level security;
 alter table public.categories enable row level security;
@@ -258,6 +279,18 @@ alter table public.expense_analyses enable row level security;
 -- Grant required privileges for backend service role
 GRANT SELECT, UPDATE
 ON TABLE public.profiles
+TO service_role;
+
+GRANT SELECT
+ON TABLE public.group_members
+TO service_role;
+
+GRANT SELECT, INSERT
+ON TABLE public.groups
+TO service_role;
+
+GRANT SELECT, INSERT
+ON TABLE public.group_members
 TO service_role;
 
 -- Profiles: self and active fellow group members can read; only self can update.
@@ -285,6 +318,7 @@ using(public.is_active_group_member(group_id) or user_id=(select auth.uid()));
 create policy invitations_read on public.group_invitations for select to authenticated
 using(public.is_active_group_member(group_id) or invited_user_id=(select auth.uid()));
 create policy categories_read on public.categories for select to authenticated using(true);
+create policy group_backgrounds_read on public.group_backgrounds for select to authenticated using(is_active = true);
 
 create policy transactions_read on public.transactions for select to authenticated
 using(public.is_active_group_member(group_id));
@@ -313,6 +347,151 @@ create policy alerts_owner_all on public.budget_alerts for all to authenticated
 using(public.is_budget_owner(budget_id)) with check(public.is_budget_owner(budget_id));
 create policy analyses_owner_all on public.expense_analyses for all to authenticated
 using(user_id=(select auth.uid())) with check(user_id=(select auth.uid()));
+
+-- BL-06: create group, add creator as owner, and create pending invitations.
+-- Group, owner membership, and invitations are committed atomically.
+
+create or replace function public.create_group_with_owner(
+  p_name varchar,
+  p_description text,
+  p_user_id uuid,
+  p_member_ids uuid[] default '{}'::uuid[],
+  p_start_date date default null,
+  p_end_date date default null,
+  p_background_id uuid default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_group public.groups%rowtype;
+  v_membership public.group_members%rowtype;
+  v_invitations jsonb := '[]'::jsonb;
+  v_requested_count integer;
+  v_distinct_count integer;
+  v_start_date date := coalesce(p_start_date, current_date);
+begin
+  if not exists (
+    select 1 from public.profiles where id = p_user_id
+  ) then
+    raise exception 'USER_PROFILE_NOT_FOUND';
+  end if;
+
+  if p_end_date is not null and p_end_date < v_start_date then
+    raise exception 'END_DATE_BEFORE_START_DATE';
+  end if;
+
+  if p_background_id is not null and not exists (
+    select 1 from public.group_backgrounds
+    where id = p_background_id and is_active = true
+  ) then
+    raise exception 'BACKGROUND_NOT_FOUND';
+  end if;
+
+  if p_member_ids is null then
+    p_member_ids := '{}'::uuid[];
+  end if;
+
+  if p_user_id = any(p_member_ids) then
+    raise exception 'CREATOR_CANNOT_BE_INVITED';
+  end if;
+
+  select count(*), count(distinct member_id)
+    into v_requested_count, v_distinct_count
+  from unnest(p_member_ids) as requested(member_id);
+
+  if v_requested_count <> v_distinct_count then
+    raise exception 'DUPLICATE_MEMBER_IDS';
+  end if;
+
+  if exists (
+    select 1
+    from unnest(p_member_ids) as requested(member_id)
+    left join public.profiles p on p.id = requested.member_id
+    where p.id is null
+  ) then
+    raise exception 'INVITED_PROFILE_NOT_FOUND';
+  end if;
+
+  insert into public.groups (
+    name, description, created_by, start_date, end_date, background_id
+  )
+  values (
+    p_name, p_description, p_user_id, v_start_date, p_end_date, p_background_id
+  )
+  returning * into v_group;
+
+  insert into public.group_members (group_id, user_id, role, status)
+  values (v_group.id, p_user_id, 'owner', 'active')
+  returning * into v_membership;
+
+  if cardinality(p_member_ids) > 0 then
+    with inserted as (
+      insert into public.group_invitations (
+        group_id, invited_by, invited_user_id, status
+      )
+      select v_group.id, p_user_id, member_id, 'pending'
+      from unnest(p_member_ids) as selected(member_id)
+      returning id, group_id, invited_user_id, invite_code, status,
+                expires_at, created_at
+    )
+    select coalesce(
+      jsonb_agg(jsonb_build_object(
+        'id', id,
+        'group_id', group_id,
+        'invited_user_id', invited_user_id,
+        'invite_code', invite_code,
+        'status', status,
+        'expires_at', expires_at,
+        'created_at', created_at
+      )),
+      '[]'::jsonb
+    )
+    into v_invitations
+    from inserted;
+  end if;
+
+  return jsonb_build_object(
+    'group', jsonb_build_object(
+      'id', v_group.id,
+      'name', v_group.name,
+      'description', v_group.description,
+      'join_code', v_group.join_code,
+      'created_by', v_group.created_by,
+      'start_date', v_group.start_date,
+      'end_date', v_group.end_date,
+      'background_id', v_group.background_id,
+      'created_at', v_group.created_at,
+      'updated_at', v_group.updated_at
+    ),
+    'membership', jsonb_build_object(
+      'id', v_membership.id,
+      'group_id', v_membership.group_id,
+      'user_id', v_membership.user_id,
+      'role', v_membership.role,
+      'status', v_membership.status,
+      'joined_at', v_membership.joined_at
+    ),
+    'invitations', v_invitations
+  );
+end;
+$$;
+
+-- Only the trusted backend service role may execute the RPC.
+revoke all on function public.create_group_with_owner(
+  varchar, text, uuid, uuid[], date, date, uuid
+) from public, anon, authenticated;
+
+grant execute on function public.create_group_with_owner(
+  varchar, text, uuid, uuid[], date, date, uuid
+) to service_role;
+
+grant select on public.group_backgrounds to service_role;
+grant select, insert on public.groups to service_role;
+grant select, insert on public.group_members to service_role;
+grant select, insert on public.group_invitations to service_role;
 
 -- Backend service-role operations bypass RLS. Never expose service-role key in mobile app.
 commit;
