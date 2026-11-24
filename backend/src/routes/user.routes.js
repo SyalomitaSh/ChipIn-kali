@@ -1,23 +1,24 @@
-
 import { Router } from 'express';
 
-import { asyncHandler as h } from '../utils/asyncHandler.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 import { validate } from '../middlewares/validate.js';
 import { requireAuth } from '../middlewares/auth.js';
 import { uploadAvatar } from '../middlewares/uploadAvatar.js';
-
 import { updateProfileSchema } from '../validators/user.validator.js';
-import * as user from '../controllers/user.controller.js';
+import * as userController from '../controllers/user.controller.js';
 
 const router = Router();
 
-// Semua endpoint membutuhkan autentikasi.
+// Semua endpoint user membutuhkan autentikasi.
 router.use(requireAuth);
 
-// GET /api/users/me
-router.get('/me', h(user.getMe));
+router.get('/me', asyncHandler(userController.getMe));
 
-// PATCH /api/users/me
-router.patch('/me', uploadAvatar, validate({ body: updateProfileSchema }), h(user.updateMe));
+router.patch(
+  '/me',
+  uploadAvatar,
+  validate({ body: updateProfileSchema }),
+  asyncHandler(userController.updateMe)
+);
 
 export default router;
