@@ -1,4 +1,4 @@
-# Chip-In
+# Chip-In 
 
 A Shared Expense Management Application.
 
