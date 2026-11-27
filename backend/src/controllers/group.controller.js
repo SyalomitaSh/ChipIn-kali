@@ -208,3 +208,136 @@ export const getGroupMembers = async (req, res) => {
     },
   });
 };
+
+
+// GET /api/groups — daftar grup yang diikuti user saat ini.
+// Search dan filter status diterapkan pada hasil milik user.
+export const getMyGroups = async (req, res) => {
+  const userId = req.user.id;
+  const query = req.validated?.query ?? req.query;
+  const search = (query.search ?? '').trim().toLowerCase();
+  const statusFilter = query.status ?? 'all';
+
+  const { data: memberships, error: membershipError } = await supabaseAdmin
+    .from('group_members')
+    .select('group_id')
+    .eq('user_id', userId)
+    .eq('status', 'active');
+
+  if (membershipError) {
+    console.error('Get my groups memberships error:', membershipError);
+    throw new AppError(500, 'GROUPS_FETCH_FAILED', 'Gagal mengambil daftar grup');
+  }
+
+  const groupIds = [...new Set((memberships ?? []).map(({ group_id: groupId }) => groupId))];
+
+  if (groupIds.length === 0) {
+    return res.status(200).json({
+      success: true,
+      data: { total: 0, groups: [] },
+    });
+  }
+
+  const { data: groups, error: groupsError } = await supabaseAdmin
+    .from('groups')
+    .select('id, name, description, background_id, created_by, created_at')
+    .in('id', groupIds)
+    .order('created_at', { ascending: false });
+
+  if (groupsError) {
+    console.error('Get my groups error:', groupsError);
+    throw new AppError(500, 'GROUPS_FETCH_FAILED', 'Gagal mengambil daftar grup');
+  }
+
+  const [memberResult, transactionResult, memberBillResult] = await Promise.all([
+    supabaseAdmin
+      .from('group_members')
+      .select('group_id')
+      .in('group_id', groupIds)
+      .eq('status', 'active'),
+    supabaseAdmin
+      .from('transactions')
+      .select('id, group_id')
+      .in('group_id', groupIds)
+      .neq('status', 'cancelled'),
+    supabaseAdmin
+      .from('member_bills')
+      .select('transaction_id, payment_status')
+      .eq('user_id', userId),
+  ]);
+
+  if (memberResult.error || transactionResult.error || memberBillResult.error) {
+    console.error('Get my groups summary error:', {
+      members: memberResult.error,
+      transactions: transactionResult.error,
+      memberBills: memberBillResult.error,
+    });
+    throw new AppError(500, 'GROUPS_SUMMARY_FETCH_FAILED', 'Gagal mengambil ringkasan grup');
+  }
+
+  const memberCounts = new Map();
+  for (const { group_id: groupId } of memberResult.data ?? []) {
+    memberCounts.set(groupId, (memberCounts.get(groupId) ?? 0) + 1);
+  }
+
+  const transactions = transactionResult.data ?? [];
+  const transactionGroupById = new Map(
+    transactions.map(({ id, group_id: groupId }) => [id, groupId])
+  );
+  const billCounts = new Map();
+  for (const transaction of transactions) {
+    billCounts.set(
+      transaction.group_id,
+      (billCounts.get(transaction.group_id) ?? 0) + 1
+    );
+  }
+
+  const unsettledGroups = new Set();
+  const groupsWithBills = new Set();
+  for (const bill of memberBillResult.data ?? []) {
+    const groupId = transactionGroupById.get(bill.transaction_id);
+    if (!groupId) continue;
+
+    groupsWithBills.add(groupId);
+    if (bill.payment_status !== 'paid') unsettledGroups.add(groupId);
+  }
+
+  let result = (groups ?? []).map((group) => {
+    const hasUnsettledBills = unsettledGroups.has(group.id);
+    const hasBills = groupsWithBills.has(group.id);
+
+    return {
+      id: group.id,
+      name: group.name,
+      description: group.description,
+      background_id: group.background_id,
+      created_by: group.created_by,
+      created_at: group.created_at,
+      total_members: memberCounts.get(group.id) ?? 0,
+      total_bills: billCounts.get(group.id) ?? 0,
+      settlement_status: hasUnsettledBills
+        ? 'unsettled'
+        : hasBills
+          ? 'settled'
+          : 'no_bills',
+    };
+  });
+
+  if (search) {
+    result = result.filter((group) => group.name.toLowerCase().includes(search));
+  }
+
+  if (statusFilter === 'unsettled') {
+    result = result.filter((group) => group.settlement_status === 'unsettled');
+  } else if (statusFilter === 'settled') {
+    result = result.filter((group) => group.settlement_status === 'settled');
+  }
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      total: result.length,
+      groups: result,
+    },
+  });
+};

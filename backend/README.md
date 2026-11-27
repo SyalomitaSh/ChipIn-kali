@@ -556,3 +556,6 @@ Contoh body PATCH di atas hanya contoh apabila `full_name` memang diizinkan oleh
 Lihat [`docs/BL-05-INVITE-GROUP-BY-LINK-CODE.md`](docs/BL-05-INVITE-GROUP-BY-LINK-CODE.md) untuk kontrak endpoint, alur frontend, error code, dan checklist pengujian.
 
 Jalankan migration `supabase/migrations/20261127000000_bl05_group_join_by_code.sql` sebelum menggunakan endpoint BL-05.
+
+
+## BL-08 — List My Groups\n\nLihat `docs/BL-08-LIST-MY-GROUPS.md` untuk endpoint `GET /api/groups`, query search, filter status pembayaran, dan format response.\n
