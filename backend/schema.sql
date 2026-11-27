@@ -39,6 +39,7 @@ create table public.groups (
   name varchar(100) not null,
   description text,
   join_code varchar(20) not null unique default upper(substr(encode(gen_random_bytes(8),'hex'),1,10)),
+  join_code_expires_at timestamptz not null default (now() + interval '30 days'),
   created_by uuid not null references public.profiles(id) on delete restrict,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
