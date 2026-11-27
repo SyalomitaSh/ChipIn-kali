@@ -551,3 +551,8 @@ Contoh body PATCH di atas hanya contoh apabila `full_name` memang diizinkan oleh
 ---
 
 **ChipIn Backend — Sprint 1**
+## BL-05 — Undang Anggota via Link/Kode
+
+Lihat [`docs/BL-05-INVITE-GROUP-BY-LINK-CODE.md`](docs/BL-05-INVITE-GROUP-BY-LINK-CODE.md) untuk kontrak endpoint, alur frontend, error code, dan checklist pengujian.
+
+Jalankan migration `supabase/migrations/20261127000000_bl05_group_join_by_code.sql` sebelum menggunakan endpoint BL-05.
