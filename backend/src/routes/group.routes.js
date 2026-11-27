@@ -4,7 +4,10 @@ import { requireAuth } from '../middlewares/auth.js';
 import { requireGroupMember } from '../middlewares/groupAccess.js';
 import { validate } from '../middlewares/validate.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { createGroupSchema } from '../validators/group.validator.js';
+import {
+  createGroupSchema,
+  getMyGroupsQuerySchema,
+} from '../validators/group.validator.js';
 import {
   joinCodeParamsSchema,
   joinGroupSchema,
@@ -13,6 +16,13 @@ import * as groupController from '../controllers/group.controller.js';
 import * as groupInvitationController from '../controllers/groupInvitation.controller.js';
 
 const router = Router();
+
+router.get(
+  '/',
+  requireAuth,
+  validate({ query: getMyGroupsQuerySchema }),
+  asyncHandler(groupController.getMyGroups)
+);
 
 router.get(
   '/backgrounds',

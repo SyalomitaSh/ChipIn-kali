@@ -57,3 +57,8 @@ export const createGroupSchema = z.object({
     path: ['end_date'],
   }
 );
+
+export const getMyGroupsQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+  status: z.enum(['all', 'unsettled', 'settled']).default('all'),
+}).strict();
