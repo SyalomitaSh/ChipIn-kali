@@ -11,6 +11,8 @@ import {
     Image
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { register } from '@/services/auth.service';
+import { ApiError } from '@/services/api';
 
 import AuthInput from '@/components/auth/AuthInput';
 import AuthButton from '@/components/auth/AuthButton';
@@ -24,6 +26,7 @@ export default function RegisterScreen() {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [agreeToTerms, setAgreeToTerms] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
 
     const [errors, setErrors] = useState({
         fullName: '',
@@ -33,6 +36,7 @@ export default function RegisterScreen() {
         confirmPassword: '',
         terms: '',
     });
+
 
     const validateForm = () => {
         const newErrors = {
@@ -44,25 +48,32 @@ export default function RegisterScreen() {
             terms: '',
         };
 
+        const trimmedFullName = fullName.trim();
+        const normalizedUsername = username.trim().toLowerCase();
+        const normalizedEmail = email.trim();
+
         // Full Name Validation
-        if (!fullName.trim()) {
+        if (!trimmedFullName) {
             newErrors.fullName = 'Full name is required';
-        } else if (fullName.trim().length < 2) {
-            newErrors.fullName = 'Name must be at least 2 characters';
+        } else if (
+            trimmedFullName.length < 2 ||
+            trimmedFullName.length > 50
+        ) {
+            newErrors.fullName = 'Name must be 2–50 characters';
         }
 
         // Username Validation
-        if (!username.trim()) {
+        if (!normalizedUsername) {
             newErrors.username = 'Username is required';
-        } else if (!/^[a-zA-Z0-9_]{3,}$/.test(username.trim())) {
+        } else if (!/^[a-z0-9_]{3,30}$/.test(normalizedUsername)) {
             newErrors.username =
-                'Username must be at least 3 characters and contain only letters, numbers, or underscores';
+                'Username must be 3–30 characters and contain only lowercase letters, numbers, or underscores';
         }
 
         // Email Validation
-        if (!email.trim()) {
+        if (!normalizedEmail) {
             newErrors.email = 'Email is required';
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
             newErrors.email = 'Please enter a valid email';
         }
 
@@ -90,15 +101,79 @@ export default function RegisterScreen() {
         return !Object.values(newErrors).some((error) => error !== '');
     };
 
-    const handleRegister = () => {
-        if (!validateForm()) return;
 
-        // Registration API will be integrated later.
-        Alert.alert(
-            'Registration',
-            'Registration API integration is not implemented yet.'
-        );
+
+    const handleRegister = async () => {
+        if (isLoading || !validateForm()) return;
+
+        setIsLoading(true);
+
+        try {
+            const response = await register({
+                username: username.trim().toLowerCase(),
+                full_name: fullName.trim(),
+                email: email.trim().toLowerCase(),
+                password: password,
+            });
+
+            if (response.data.requires_email_confirmation) {
+                Alert.alert(
+                    'Registration Successful',
+                    'Please check your email to confirm your account.',
+                    [
+                        {
+                            text: 'OK',
+                            onPress: () => router.replace('/(auth)/login'),
+                        },
+                    ],
+                );
+
+                return;
+            }
+
+            Alert.alert(
+                'Registration Successful',
+                'Your account has been created. Please sign in to continue.',
+                [
+                    {
+                        text: 'OK',
+                        onPress: () => router.replace('/(auth)/login'),
+                    },
+                ],
+            );
+        } catch (error) {
+            if (error instanceof ApiError) {
+                switch (error.code) {
+                    case 'USERNAME_TAKEN':
+                        Alert.alert('Registration Failed', 'Username is already taken.');
+                        break;
+
+                    case 'EMAIL_TAKEN':
+                        Alert.alert('Registration Failed', 'Email is already registered.');
+                        break;
+
+                    case 'INVALID_EMAIL':
+                        Alert.alert('Registration Failed', 'Please enter a valid email.');
+                        break;
+
+                    case 'RATE_LIMITED':
+                        Alert.alert('Too Many Requests', 'Please try again later.');
+                        break;
+
+                    default:
+                        Alert.alert('Registration Failed', error.message);
+                }
+            } else {
+                Alert.alert(
+                    'Registration Failed',
+                    'Unable to connect to the server. Please try again.',
+                );
+            }
+        } finally {
+            setIsLoading(false);
+        }
     };
+
 
     const handleGoogleRegister = () => {
         Alert.alert('Google Sign-Up', 'Google authentication will be implemented later.');
@@ -230,8 +305,10 @@ export default function RegisterScreen() {
 
                         {/* Register Button */}
                         <AuthButton
-                            title="Register"
+                            title={isLoading ? 'Registering...' : 'Register'}
                             onPress={handleRegister}
+                            loading={isLoading}
+                            disabled={isLoading}
                             style={styles.registerButton}
                         />
                     </View>
