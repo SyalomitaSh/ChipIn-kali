@@ -10,6 +10,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 
+import { AuthProvider } from '../contexts/AuthContext';
+
 import { useColorScheme } from '@/components/useColorScheme';
 
 export {
@@ -25,6 +27,7 @@ export default function RootLayout() {
     MontserratRegular: require('../assets/fonts/montserrat-regular.ttf'),
     MontserratMedium: require('../assets/fonts/montserrat-medium.ttf'),
     MontserratBold: require('../assets/fonts/montserrat-bold.ttf'),
+    // MontserratSemiBold: require('../assets/fonts/montserrat-semibold.ttf')
   });
   // const [loaded, error] = useFonts({
   //   SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
@@ -54,28 +57,30 @@ function RootLayoutNav() {
     <ThemeProvider
       value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}
     >
-      <Stack>
-        <Stack.Screen
-          name="index"
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="onboarding"
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="(auth)"
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="(tabs)"
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="modal"
-          options={{ presentation: 'modal' }}
-        />
-      </Stack>
+      <AuthProvider>
+        <Stack>
+          <Stack.Screen
+            name="index"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="onboarding"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="(auth)"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="(tabs)"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="modal"
+            options={{ presentation: 'modal' }}
+          />
+        </Stack>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

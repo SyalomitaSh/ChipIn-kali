@@ -15,9 +15,15 @@ import { useRouter } from 'expo-router';
 
 import AuthInput from '@/components/auth/AuthInput';
 import AuthButton from '@/components/auth/AuthButton';
+import { useAuth } from '../../contexts/AuthContext';
+import { ApiError } from '../../services/api';
 
 export default function LoginScreen() {
     const router = useRouter();
+
+    const { signIn } = useAuth();
+
+    const [isLoading, setIsLoading] = useState(false);
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -49,11 +55,57 @@ export default function LoginScreen() {
         return !newErrors.email && !newErrors.password;
     };
 
-    const handleLogin = () => {
+    const handleLogin = async () => {
         if (!validateForm()) return;
 
-        // API login will be integrated later.
-        Alert.alert('Login', 'Login API integration is not implemented yet.');
+        try {
+            setIsLoading(true);
+
+            await signIn(email.trim().toLowerCase(), password);
+
+            Alert.alert(
+                'Login Successful',
+                'Welcome back to Chip-In!',
+            );
+
+            router.replace('/(tabs)');
+        } catch (error) {
+            if (error instanceof ApiError) {
+                switch (error.code) {
+                    case 'INVALID_CREDENTIALS':
+                        Alert.alert(
+                            'Login Failed',
+                            'Email or password is incorrect.',
+                        );
+                        break;
+
+                    case 'EMAIL_NOT_CONFIRMED':
+                        Alert.alert(
+                            'Email Not Confirmed',
+                            'Please verify your email before logging in.',
+                        );
+                        break;
+
+                    case 'RATE_LIMITED':
+                        Alert.alert(
+                            'Too Many Attempts',
+                            'Please try again later.',
+                        );
+                        break;
+
+                    default:
+                        Alert.alert('Login Failed', error.message);
+                        break;
+                }
+            } else {
+                Alert.alert(
+                    'Connection Error',
+                    'Unable to connect to the server. Please try again.',
+                );
+            }
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleGoogleLogin = () => {
@@ -141,6 +193,8 @@ export default function LoginScreen() {
                         <AuthButton
                             title="Sign In"
                             onPress={handleLogin}
+                            loading={isLoading}
+                            disabled={isLoading}
                             style={styles.signInButton}
                         />
                     </View>
